@@ -8,7 +8,7 @@ prices_list <- lapply(tickers, function(tk) {
   x <- getSymbols(tk,
                   src = "yahoo",
                   from = "1999-12-31",
-                  to   = Sys.Date(),
+                  to   = "2026-07-26"(),
                   auto.assign = FALSE)
   Ad(x)                      # adjusted close only
 })
@@ -21,3 +21,8 @@ dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
 saveRDS(prices, "data/raw/prices_raw.rds")
 write.csv(as.data.frame(prices), "data/raw/prices_raw.csv")
 
+dim(prices)
+head(prices, 3)
+tail(prices, 3)
+range(index(prices))
+colSums(is.na(prices))
