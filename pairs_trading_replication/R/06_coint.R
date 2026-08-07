@@ -320,3 +320,102 @@ ggsave("output/figures/rolling_hedge_ratio.png", p_beta,
        width = 10, height = 6, dpi = 300, bg = "white")
 
 message("Rolling cointegration complete.")
+
+# =============================================================
+# 08_full_sample_eg.R
+# Full sample Engle and Granger cointegration tests, for the
+# candidate pairs carried from the Granger screening.
+#
+# Provides the single sample verdict that the rolling analysis of
+# 07_rolling_cointegration.R then decomposes through time.
+#
+# Reads:  data/raw/prices_raw.rds
+# Writes: output/tables/eg_full_sample.tex
+# =============================================================
+
+library(urca)
+library(xtable)
+library(zoo)
+
+dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
+
+prices   <- readRDS("data/raw/prices_raw.rds")
+price_df <- as.data.frame(prices)
+lp       <- log(price_df)
+
+EG_CV <- c("1pct" = -3.90, "5pct" = -3.34, "10pct" = -3.04)
+
+# Engle and Granger step one, full sample
+eg_full <- function(y_name, x_name, data) {
+  fit <- lm(data[[y_name]] ~ data[[x_name]])
+  r   <- residuals(fit)
+  adf <- ur.df(r, type = "none", lags = 4, selectlags = "AIC")
+  data.frame(
+    caused      = y_name,
+    causing     = x_name,
+    beta        = unname(coef(fit)[2]),
+    adf_stat    = as.numeric(adf@teststat[1]),
+    coint_5     = as.numeric(adf@teststat[1]) < EG_CV["5pct"],
+    coint_1     = as.numeric(adf@teststat[1]) < EG_CV["1pct"],
+    stringsAsFactors = FALSE
+  )
+}
+
+# The pairs carried from the Granger shortlist, both directions where
+# both survived. COP-XOM is retained regardless as the original's choice.
+PAIRS <- list(
+  c("COP", "XOM"), c("XOM", "COP"),
+  c("CVX", "XOM"), c("XOM", "CVX"),
+  c("COP", "CVX"), c("CVX", "COP"),
+  c("XOM", "XLE"), c("CVX", "XLE"),
+  c("COP", "XLE")
+)
+
+res <- do.call(rbind, lapply(PAIRS, function(p) eg_full(p[1], p[2], lp)))
+res <- res[order(res$adf_stat), ]
+
+cat("=== Full sample Engle and Granger, 1999 to 2026 ===\n")
+cat("EG 5% critical value:", EG_CV["5pct"], "\n\n")
+print(res, digits = 4, row.names = FALSE)
+
+# Compare against the original's training window, 1999-12-31 to 2013-04-30,
+# to show the pair tested as cointegrated then and does not now.
+train_end <- which(as.Date(as.POSIXct(zoo::index(prices),
+                                      origin = "1970-01-01", tz = "UTC")) <= as.Date("2013-04-30"))
+train_end <- max(train_end)
+
+lp_train <- lp[1:train_end, ]
+
+cat("\n=== COP-XOM on the original training window only (to 2013-04-30) ===\n")
+print(eg_full("COP", "XOM", lp_train), digits = 4, row.names = FALSE)
+print(eg_full("XOM", "COP", lp_train), digits = 4, row.names = FALSE)
+
+# Export the full sample table
+out <- data.frame(
+  Pair       = paste0(res$caused, " on ", res$causing),
+  `$\\hat{\\beta}$` = res$beta,
+  `ADF stat` = res$adf_stat,
+  `Cointegrated at 5\\%` = ifelse(res$coint_5, "Yes", "No"),
+  check.names = FALSE
+)
+
+print(
+  xtable(out,
+         digits = c(0, 0, 4, 3, 0),
+         caption = paste("Full sample Engle and Granger cointegration tests,",
+                         "31 December 1999 to 24 July 2026, on log price levels.",
+                         "The residual ADF statistic is evaluated against the",
+                         "Engle and Granger 5 percent critical value of",
+                         "$-3.34$. No pair rejects the unit root null over the",
+                         "full sample."),
+         label = "tab:eg_full"),
+  file = "output/tables/eg_full_sample.tex",
+  booktabs = TRUE, include.rownames = FALSE,
+  caption.placement = "top", table.placement = "H",
+  sanitize.text.function = identity,
+  sanitize.colnames.function = identity
+)
+
+message("Full sample EG complete. Report the console COP-XOM training-window ",
+        "statistics in the chapter where marked.")
+
